@@ -5,10 +5,13 @@
 """
 
 import json
+import random
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+LOG_DIR = Path(__file__).resolve().parent.parent / "leaming_log"
 MAX_RESULTS = 3
 
 
@@ -32,7 +35,7 @@ def search_glossary(query: str) -> str:
     """講座の用語集から用語を検索し、定義と、どの回で扱うかを返す。
 
     AIエンジニアリングの用語や、この講座（AIE2026）に固有の言葉について
-    答える前に使うこと。query には調べたい用語を1つだけ入れる（例: "LoRA"）。
+    答える前に使うこと。query には調べたい用語をまとめて入れる。
     """
     q = _normalize(query)
     if not q:
@@ -77,3 +80,46 @@ def get_lecture_summary(lecture: int) -> str:
         available = sorted(p.stem for p in (DATA_DIR / "lectures").glob("*.md"))
         return f"第{lecture}回の要点はまだありません。用意されている回: {', '.join(available)}"
     return path.read_text(encoding="utf-8")
+
+
+def make_quiz(lecture: int) -> str:
+    """指定した回の用語から1つを選び、4択の確認問題と答えを返す。
+
+    「第2回の確認問題を出して」のように、4択の復習問題を求められたときに使う。
+    """
+    glossary = load_glossary()
+    terms = [term for term in glossary if term["lecture"] == lecture]
+    if not terms:
+        return f"第{lecture}回の用語が見つかりませんでした。"
+
+    term = random.choice(terms)
+    distractors = list(
+        {entry["definition"] for entry in glossary if entry["definition"] != term["definition"]}
+    )
+    if len(distractors) < 3:
+        return f"第{lecture}回の用語が4択問題を作るために十分にありません。"
+
+    options = random.sample(distractors, 3) + [term["definition"]]
+    random.shuffle(options)
+    labels = "ABCD"
+    return json.dumps(
+        {
+            "question": f"「{term['term']}」の意味は？",
+            "choices": [
+                {"label": label, "text": option}
+                for label, option in zip(labels, options)
+            ],
+            "answer": labels[options.index(term["definition"])],
+        },
+        ensure_ascii=False,
+    )
+
+def save_leaming_log(topic: str, note: str) -> str:
+    """学習の記録を leaming_log/ に保存する。保存前に必ず利用者の確認を得ること。"""
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    path = LOG_DIR / f"{datetime.now():%Y%m%d_%H%M%S_%f}.json"
+    path.write_text(
+        json.dumps({"topic": topic, "note": note}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return f"保存しました: {path.name}"
